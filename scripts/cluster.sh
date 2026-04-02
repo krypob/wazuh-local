@@ -9,11 +9,19 @@ K3D_CONFIG_PATH="${K3D_CONFIG_PATH:-$(dirname "${BASH_SOURCE[0]}")/../configs/k3
 create_cluster() {
   log_section "Creating k3d Cluster"
 
-  if k3d cluster list 2>/dev/null | grep -q "^${CLUSTER_NAME}"; then
-    log_warn "Cluster '${CLUSTER_NAME}' already exists — skipping creation."
-    k3d kubeconfig merge "${CLUSTER_NAME}" --kubeconfig-merge-default &>/dev/null
-    log_ok "kubeconfig merged for existing cluster."
-    return 0
+  if k3d cluster get "${CLUSTER_NAME}" &>/dev/null 2>&1; then
+    # Cluster exists — check if it is actually healthy before reusing it.
+    # A stale cluster (e.g. left over from a failed previous run or a
+    # different Docker context) will fail the kubectl check, in which case
+    # we delete it and start fresh.
+    k3d kubeconfig merge "${CLUSTER_NAME}" --kubeconfig-merge-default &>/dev/null || true
+    if kubectl cluster-info &>/dev/null 2>&1; then
+      log_warn "Cluster '${CLUSTER_NAME}' already exists and is healthy — reusing."
+      return 0
+    else
+      log_warn "Cluster '${CLUSTER_NAME}' exists but is not reachable — deleting stale cluster..."
+      k3d cluster delete "${CLUSTER_NAME}"
+    fi
   fi
 
   log_info "Creating cluster '${CLUSTER_NAME}' from ${K3D_CONFIG_PATH}..."
