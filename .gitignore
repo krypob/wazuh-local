@@ -1,0 +1,17 @@
+# Generated TLS certificates (created at runtime by setup.sh)
+/tmp/wazuh-certs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Shell history / temp files
+*.log
+*.tmp

@@ -1,0 +1,93 @@
+# configs/wazuh/manager/configmap.yaml
+# Wazuh Manager (ossec.conf) configuration for local single-node deployment.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-manager-config
+  namespace: wazuh
+  labels:
+    app: wazuh-manager
+data:
+  ossec.conf: |
+    <ossec_config>
+
+      <!-- ── Global settings ──────────────────────────────────────────────── -->
+      <global>
+        <jsonout_output>yes</jsonout_output>
+        <alerts_log>yes</alerts_log>
+        <logall>no</logall>
+        <logall_json>no</logall_json>
+        <email_notification>no</email_notification>
+        <smtp_server>smtp.example.wazuh.com</smtp_server>
+        <email_from>wazuh@example.wazuh.com</email_from>
+        <email_to>recipient@example.wazuh.com</email_to>
+        <email_maxperhour>12</email_maxperhour>
+        <email_log_source>alerts.log</email_log_source>
+        <agents_disconnection_time>10m</agents_disconnection_time>
+        <agents_disconnection_alert_time>0</agents_disconnection_alert_time>
+      </global>
+
+      <!-- ── Alerts configuration ─────────────────────────────────────────── -->
+      <alerts>
+        <log_alert_level>3</log_alert_level>
+        <email_alert_level>12</email_alert_level>
+      </alerts>
+
+      <!-- ── Logging ──────────────────────────────────────────────────────── -->
+      <logging>
+        <log_format>plain</log_format>
+      </logging>
+
+      <!-- ── Remote (agent receiver) ──────────────────────────────────────── -->
+      <remote>
+        <connection>secure</connection>
+        <port>1514</port>
+        <protocol>tcp</protocol>
+        <queue_size>131072</queue_size>
+      </remote>
+
+      <!-- ── Rootcheck ─────────────────────────────────────────────────────── -->
+      <rootcheck>
+        <disabled>no</disabled>
+        <frequency>43200</frequency>
+      </rootcheck>
+
+      <!-- ── File integrity monitoring ────────────────────────────────────── -->
+      <syscheck>
+        <disabled>no</disabled>
+        <frequency>43200</frequency>
+        <scan_on_start>yes</scan_on_start>
+        <max_eps>50</max_eps>
+      </syscheck>
+
+      <!-- ── Vulnerability detector ────────────────────────────────────────── -->
+      <vulnerability-detector>
+        <enabled>no</enabled>
+      </vulnerability-detector>
+
+      <!-- ── Indexer integration ───────────────────────────────────────────── -->
+      <indexer>
+        <enabled>yes</enabled>
+        <hosts>
+          <host>https://wazuh-indexer-svc:9200</host>
+        </hosts>
+        <ssl>
+          <certificate_authorities>
+            <ca>/etc/ssl/root-ca.pem</ca>
+          </certificate_authorities>
+          <certificate>/etc/ssl/manager.pem</certificate>
+          <key>/etc/ssl/manager-key.pem</key>
+        </ssl>
+      </indexer>
+
+      <!-- ── API configuration ─────────────────────────────────────────────── -->
+      <api>
+        <https>
+          <enabled>yes</enabled>
+          <key>/etc/ssl/manager-key.pem</key>
+          <cert>/etc/ssl/manager.pem</cert>
+        </https>
+      </api>
+
+    </ossec_config>

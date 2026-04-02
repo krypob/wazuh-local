@@ -1,0 +1,113 @@
+# configs/wazuh/manager/statefulset.yaml
+# Wazuh Manager — single-replica StatefulSet for local dev.
+# Handles agent communication, event analysis, and alert generation.
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wazuh-manager
+  namespace: wazuh
+  labels:
+    app: wazuh-manager
+spec:
+  serviceName: wazuh-manager
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wazuh-manager
+  template:
+    metadata:
+      labels:
+        app: wazuh-manager
+    spec:
+      containers:
+        - name: wazuh-manager
+          image: wazuh/wazuh-manager:4.9.0
+          imagePullPolicy: IfNotPresent
+
+          # ── Ports ──────────────────────────────────────────────────────────
+          ports:
+            - containerPort: 1514
+              name: agent-data
+              protocol: TCP
+            - containerPort: 1515
+              name: agent-enroll
+              protocol: TCP
+            - containerPort: 55000
+              name: api
+              protocol: TCP
+
+          # ── Resources (lightweight tuned) ──────────────────────────────────
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          # ── Environment ────────────────────────────────────────────────────
+          env:
+            - name: INDEXER_URL
+              value: "https://wazuh-indexer-svc:9200"
+            - name: INDEXER_USERNAME
+              value: "admin"
+            - name: INDEXER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-passwords
+                  key: indexer-password
+            - name: FILEBEAT_SSL_VERIFICATION_MODE
+              value: "full"
+            - name: API_USERNAME
+              value: "wazuh-wui"
+            - name: API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-passwords
+                  key: api-password
+
+          # ── Volume mounts ──────────────────────────────────────────────────
+          volumeMounts:
+            - name: manager-data
+              mountPath: /var/ossec/data
+            - name: manager-logs
+              mountPath: /var/ossec/logs
+            - name: manager-config
+              mountPath: /wazuh-config-mount/etc/ossec.conf
+              subPath: ossec.conf
+            - name: manager-certs
+              mountPath: /etc/ssl
+              readOnly: true
+
+          # ── Probes ─────────────────────────────────────────────────────────
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - |
+                  /var/ossec/bin/wazuh-control status | grep -q "wazuh-analysisd is running"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 8
+          livenessProbe:
+            tcpSocket:
+              port: 1514
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
+
+      volumes:
+        - name: manager-data
+          persistentVolumeClaim:
+            claimName: wazuh-manager-data
+        - name: manager-logs
+          persistentVolumeClaim:
+            claimName: wazuh-manager-logs
+        - name: manager-config
+          configMap:
+            name: wazuh-manager-config
+        - name: manager-certs
+          secret:
+            secretName: wazuh-manager-certs

@@ -1,0 +1,53 @@
+# configs/wazuh/storage.yaml
+# PersistentVolumeClaims for Wazuh Indexer and Manager.
+# Uses k3d's built-in local-path provisioner — no extra setup needed.
+
+# ── Wazuh Indexer data volume ─────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wazuh-indexer-data
+  namespace: wazuh
+  labels:
+    app: wazuh-indexer
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# ── Wazuh Manager data volume ─────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wazuh-manager-data
+  namespace: wazuh
+  labels:
+    app: wazuh-manager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+# ── Wazuh Manager logs volume ─────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wazuh-manager-logs
+  namespace: wazuh
+  labels:
+    app: wazuh-manager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

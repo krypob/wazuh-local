@@ -1,0 +1,50 @@
+# configs/wazuh/manager/service.yaml
+# Services for the Wazuh Manager.
+# Exposes agent ports and the REST API both internally and via k3d loadbalancer.
+
+# ── Headless service for StatefulSet DNS ──────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-manager
+  namespace: wazuh
+  labels:
+    app: wazuh-manager
+spec:
+  clusterIP: None
+  selector:
+    app: wazuh-manager
+  ports:
+    - name: agent-data
+      port: 1514
+    - name: agent-enroll
+      port: 1515
+    - name: api
+      port: 55000
+
+---
+# ── LoadBalancer service — exposed on host via k3d port bindings ─────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-manager-svc
+  namespace: wazuh
+  labels:
+    app: wazuh-manager
+spec:
+  type: LoadBalancer
+  selector:
+    app: wazuh-manager
+  ports:
+    - name: agent-data
+      port: 1514
+      targetPort: 1514
+      protocol: TCP
+    - name: agent-enroll
+      port: 1515
+      targetPort: 1515
+      protocol: TCP
+    - name: api
+      port: 55000
+      targetPort: 55000
+      protocol: TCP

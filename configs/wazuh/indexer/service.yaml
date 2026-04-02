@@ -1,0 +1,41 @@
+# configs/wazuh/indexer/service.yaml
+# Services for the Wazuh Indexer (OpenSearch).
+# Headless service for StatefulSet DNS + ClusterIP for API access.
+
+# ── Headless service for StatefulSet pod DNS ───────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-indexer
+  namespace: wazuh
+  labels:
+    app: wazuh-indexer
+spec:
+  clusterIP: None
+  selector:
+    app: wazuh-indexer
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+    - name: transport
+      port: 9300
+      targetPort: 9300
+
+---
+# ── ClusterIP service for internal access from manager and dashboard ───────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-indexer-svc
+  namespace: wazuh
+  labels:
+    app: wazuh-indexer
+spec:
+  type: ClusterIP
+  selector:
+    app: wazuh-indexer
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200

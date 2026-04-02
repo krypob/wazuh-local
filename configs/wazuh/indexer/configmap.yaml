@@ -1,0 +1,63 @@
+# configs/wazuh/indexer/configmap.yaml
+# OpenSearch configuration for the Wazuh Indexer.
+# Tuned for single-node local development (minimal resources, no clustering).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-indexer-config
+  namespace: wazuh
+  labels:
+    app: wazuh-indexer
+data:
+  # Main OpenSearch config
+  opensearch.yml: |
+    network.host: 0.0.0.0
+    node.name: wazuh-indexer-0
+
+    # Single-node discovery — no cluster formation needed locally
+    discovery.type: single-node
+
+    # Paths
+    path.data: /var/lib/wazuh-indexer
+    path.logs: /var/log/wazuh-indexer
+
+    # TLS — Transport layer
+    plugins.security.ssl.transport.pemcert_filepath: /usr/share/wazuh-indexer/certs/indexer.pem
+    plugins.security.ssl.transport.pemkey_filepath: /usr/share/wazuh-indexer/certs/indexer-key.pem
+    plugins.security.ssl.transport.pemtrustedcas_filepath: /usr/share/wazuh-indexer/certs/root-ca.pem
+    plugins.security.ssl.transport.enforce_hostname_verification: false
+
+    # TLS — HTTP layer
+    plugins.security.ssl.http.enabled: true
+    plugins.security.ssl.http.pemcert_filepath: /usr/share/wazuh-indexer/certs/indexer.pem
+    plugins.security.ssl.http.pemkey_filepath: /usr/share/wazuh-indexer/certs/indexer-key.pem
+    plugins.security.ssl.http.pemtrustedcas_filepath: /usr/share/wazuh-indexer/certs/root-ca.pem
+
+    plugins.security.allow_default_init_securityindex: true
+    plugins.security.authcz.admin_dn:
+      - CN=admin,O=Wazuh,OU=Wazuh,L=Local,ST=Local,C=US
+    plugins.security.nodes_dn:
+      - CN=wazuh-indexer.wazuh.svc.cluster.local,O=Wazuh,OU=Wazuh,L=Local,ST=Local,C=US
+
+    plugins.security.audit.type: internal_opensearch
+    plugins.security.enable_snapshot_restore_privilege: true
+    plugins.security.check_snapshot_restore_write_privileges: true
+    plugins.security.restapi.roles_enabled:
+      - all_access
+      - security_rest_api_access
+
+    # Disable unused plugins for local dev
+    node.max_local_storage_nodes: 1
+
+  # JVM options — reduced heap for lightweight local dev
+  jvm.options: |
+    -Xms512m
+    -Xmx512m
+    -XX:+UseG1GC
+    -XX:G1ReservePercent=25
+    -XX:InitiatingHeapOccupancyPercent=30
+    -Djava.io.tmpdir=/tmp
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:HeapDumpPath=/var/log/wazuh-indexer
+    -XX:ErrorFile=/var/log/wazuh-indexer/hs_err_pid%p.log

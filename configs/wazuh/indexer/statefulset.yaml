@@ -1,0 +1,112 @@
+# configs/wazuh/indexer/statefulset.yaml
+# Wazuh Indexer (OpenSearch) — single-replica StatefulSet for local dev.
+# Resource limits tuned down from production defaults.
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wazuh-indexer
+  namespace: wazuh
+  labels:
+    app: wazuh-indexer
+spec:
+  serviceName: wazuh-indexer
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wazuh-indexer
+  template:
+    metadata:
+      labels:
+        app: wazuh-indexer
+    spec:
+      # Required: OpenSearch needs vm.max_map_count >= 262144
+      initContainers:
+        - name: sysctl
+          image: busybox:1.36
+          command: ["sysctl", "-w", "vm.max_map_count=262144"]
+          securityContext:
+            privileged: true
+
+      containers:
+        - name: wazuh-indexer
+          image: wazuh/wazuh-indexer:4.9.0
+          imagePullPolicy: IfNotPresent
+
+          # ── Ports ──────────────────────────────────────────────────────────
+          ports:
+            - containerPort: 9200
+              name: http
+            - containerPort: 9300
+              name: transport
+
+          # ── Resources (lightweight tuned) ──────────────────────────────────
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+
+          # ── Environment ────────────────────────────────────────────────────
+          env:
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+            - name: INDEXER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-passwords
+                  key: indexer-password
+
+          # ── Volume mounts ──────────────────────────────────────────────────
+          volumeMounts:
+            - name: indexer-data
+              mountPath: /var/lib/wazuh-indexer
+            - name: indexer-config
+              mountPath: /usr/share/wazuh-indexer/opensearch.yml
+              subPath: opensearch.yml
+            - name: indexer-config
+              mountPath: /usr/share/wazuh-indexer/jvm.options
+              subPath: jvm.options
+            - name: indexer-certs
+              mountPath: /usr/share/wazuh-indexer/certs
+              readOnly: true
+
+          # ── Probes ─────────────────────────────────────────────────────────
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+              scheme: HTTPS
+              httpHeaders:
+                - name: Authorization
+                  value: "Basic YWRtaW46U2VjdXJlUGFzc3dvcmQxMjMh"  # admin:SecurePassword123!
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+              scheme: HTTPS
+              httpHeaders:
+                - name: Authorization
+                  value: "Basic YWRtaW46U2VjdXJlUGFzc3dvcmQxMjMh"
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+
+      volumes:
+        - name: indexer-data
+          persistentVolumeClaim:
+            claimName: wazuh-indexer-data
+        - name: indexer-config
+          configMap:
+            name: wazuh-indexer-config
+        - name: indexer-certs
+          secret:
+            secretName: wazuh-indexer-certs
+
+      securityContext:
+        fsGroup: 1000

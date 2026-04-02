@@ -1,0 +1,19 @@
+# configs/wazuh/dashboard/service.yaml
+# Service for Wazuh Dashboard — exposed on port 443 via k3d loadbalancer.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-dashboard
+  namespace: wazuh
+  labels:
+    app: wazuh-dashboard
+spec:
+  type: LoadBalancer
+  selector:
+    app: wazuh-dashboard
+  ports:
+    - name: https
+      port: 443
+      targetPort: 5601
+      protocol: TCP

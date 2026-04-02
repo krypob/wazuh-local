@@ -1,0 +1,67 @@
+# configs/k3d-config.yaml
+# k3d cluster configuration for wazuh-local.
+#
+# Topology: 1 server (control-plane) + 1 agent (worker)
+# Port mappings expose Wazuh services on localhost:
+#   - 443  → Dashboard (HTTPS)
+#   - 1514 → Agent data ingestion
+#   - 1515 → Agent auto-enrollment
+#   - 55000 → Wazuh REST API
+#
+# Usage:
+#   k3d cluster create --config configs/k3d-config.yaml
+#   (managed automatically by setup.sh)
+#
+# Env overrides:
+#   CLUSTER_NAME=my-wazuh  ./setup.sh
+
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+
+# ── Cluster identity ──────────────────────────────────────────────────────────
+metadata:
+  name: wazuh-local
+
+# ── Nodes ─────────────────────────────────────────────────────────────────────
+servers: 1   # control-plane
+agents:  1   # worker node
+
+# ── Kubernetes version ────────────────────────────────────────────────────────
+image: rancher/k3s:v1.29.4-k3s1
+
+# ── Port mappings (host → cluster) ───────────────────────────────────────────
+ports:
+  # Wazuh Dashboard — HTTPS
+  - port: 443:443
+    nodeFilters:
+      - loadbalancer
+
+  # Agent data channel
+  - port: 1514:1514
+    nodeFilters:
+      - loadbalancer
+
+  # Agent auto-enrollment
+  - port: 1515:1515
+    nodeFilters:
+      - loadbalancer
+
+  # Wazuh REST API
+  - port: 55000:55000
+    nodeFilters:
+      - loadbalancer
+
+# ── Options ───────────────────────────────────────────────────────────────────
+options:
+  k3d:
+    wait: true
+    timeout: "120s"
+  k3s:
+    extraArgs:
+      # Disable Traefik — we handle ingress via NodePort/LoadBalancer directly
+      - arg: --disable=traefik
+        nodeFilters:
+          - server:*
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

@@ -1,0 +1,101 @@
+# configs/wazuh/dashboard/deployment.yaml
+# Wazuh Dashboard — single-replica Deployment.
+# Provides the web UI for security monitoring and alert review.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wazuh-dashboard
+  namespace: wazuh
+  labels:
+    app: wazuh-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wazuh-dashboard
+  template:
+    metadata:
+      labels:
+        app: wazuh-dashboard
+    spec:
+      containers:
+        - name: wazuh-dashboard
+          image: wazuh/wazuh-dashboard:4.9.0
+          imagePullPolicy: IfNotPresent
+
+          # ── Ports ──────────────────────────────────────────────────────────
+          ports:
+            - containerPort: 5601
+              name: https
+              protocol: TCP
+
+          # ── Resources (lightweight tuned) ──────────────────────────────────
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "512Mi"
+
+          # ── Environment ────────────────────────────────────────────────────
+          env:
+            - name: INDEXER_USERNAME
+              value: "admin"
+            - name: INDEXER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-passwords
+                  key: indexer-password
+            - name: WAZUH_API_URL
+              value: "https://wazuh-manager-svc"
+            - name: DASHBOARD_USERNAME
+              value: "kibanaserver"
+            - name: DASHBOARD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-passwords
+                  key: dashboard-password
+            - name: SERVER_SSL_ENABLED
+              value: "true"
+            - name: SERVER_SSL_CERTIFICATE
+              value: /usr/share/wazuh-dashboard/certs/dashboard.pem
+            - name: SERVER_SSL_KEY
+              value: /usr/share/wazuh-dashboard/certs/dashboard-key.pem
+
+          # ── Volume mounts ──────────────────────────────────────────────────
+          volumeMounts:
+            - name: dashboard-config
+              mountPath: /usr/share/wazuh-dashboard/config/opensearch_dashboards.yml
+              subPath: opensearch_dashboards.yml
+            - name: dashboard-config
+              mountPath: /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
+              subPath: wazuh.yml
+            - name: dashboard-certs
+              mountPath: /usr/share/wazuh-dashboard/certs
+              readOnly: true
+
+          # ── Probes ─────────────────────────────────────────────────────────
+          readinessProbe:
+            httpGet:
+              path: /app/wazuh
+              port: 5601
+              scheme: HTTPS
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 10
+          livenessProbe:
+            tcpSocket:
+              port: 5601
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+
+      volumes:
+        - name: dashboard-config
+          configMap:
+            name: wazuh-dashboard-config
+        - name: dashboard-certs
+          secret:
+            secretName: wazuh-dashboard-certs

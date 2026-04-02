@@ -1,0 +1,51 @@
+# examples/agent-pod.yaml
+# A test Wazuh agent running as a Kubernetes Pod inside the cluster.
+# The agent auto-enrolls with the Wazuh Manager on startup via port 1515.
+#
+# Usage:
+#   kubectl apply -f examples/agent-pod.yaml
+#   kubectl logs -n wazuh wazuh-test-agent -f
+#
+# Or use the helper:
+#   ./examples/deploy-agent.sh
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: wazuh-test-agent
+  namespace: wazuh
+  labels:
+    app: wazuh-agent
+    role: test
+spec:
+  containers:
+    - name: wazuh-agent
+      image: wazuh/wazuh-agent:4.9.0
+      imagePullPolicy: IfNotPresent
+
+      # ── Resources ────────────────────────────────────────────────────────
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "256Mi"
+
+      # ── Agent enrollment config ───────────────────────────────────────────
+      env:
+        # Manager address — use the in-cluster service name
+        - name: WAZUH_MANAGER
+          value: "wazuh-manager-svc"
+        # Agent name — will appear in the Dashboard
+        - name: WAZUH_AGENT_NAME
+          value: "k8s-test-agent"
+        # Auto-enrollment group
+        - name: WAZUH_AGENT_GROUP
+          value: "default"
+        # Registration password (must match manager config; empty = no auth)
+        - name: WAZUH_REGISTRATION_PASSWORD
+          value: ""
+
+  # Pod restarts on failure so the agent reconnects automatically
+  restartPolicy: OnFailure
