@@ -65,13 +65,15 @@ spec:
               name: transport
 
           # ── Resources (lightweight tuned) ──────────────────────────────────
+          # Memory: 512m heap + 350m direct + ~200m native overhead = ~1062m.
+          # 1536Mi limit provides ~500m margin over peak JVM usage.
           resources:
             requests:
               cpu: "250m"
-              memory: "512Mi"
+              memory: "768Mi"
             limits:
               cpu: "500m"
-              memory: "1Gi"
+              memory: "1536Mi"
 
           # ── Environment ────────────────────────────────────────────────────
           # OPENSEARCH_JAVA_OPTS is intentionally omitted — heap and direct
@@ -112,7 +114,7 @@ spec:
           livenessProbe:
             tcpSocket:
               port: 9200
-            initialDelaySeconds: 120
+            initialDelaySeconds: 300   # give OpenSearch ~5m to start before liveness kicks in
             periodSeconds: 30
             failureThreshold: 5
 
