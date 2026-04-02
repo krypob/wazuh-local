@@ -81,13 +81,4 @@ data:
         </ssl>
       </indexer>
 
-      <!-- ── API configuration ─────────────────────────────────────────────── -->
-      <api>
-        <https>
-          <enabled>yes</enabled>
-          <key>/etc/ssl/manager-key.pem</key>
-          <cert>/etc/ssl/manager.pem</cert>
-        </https>
-      </api>
-
     </ossec_config>

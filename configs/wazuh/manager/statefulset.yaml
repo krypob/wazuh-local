@@ -90,6 +90,7 @@ spec:
                   /var/ossec/bin/wazuh-control status | grep -q "wazuh-analysisd is running"
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 10
             failureThreshold: 8
           livenessProbe:
             tcpSocket:

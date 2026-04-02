@@ -41,9 +41,9 @@ data:
 
     plugins.security.allow_default_init_securityindex: true
     plugins.security.authcz.admin_dn:
-      - CN=admin,O=Wazuh,OU=Wazuh,L=Local,ST=Local,C=US
+      - CN=admin,OU=Wazuh,O=Wazuh,L=Local,ST=Local,C=US
     plugins.security.nodes_dn:
-      - CN=wazuh-indexer.wazuh.svc.cluster.local,O=Wazuh,OU=Wazuh,L=Local,ST=Local,C=US
+      - CN=wazuh-indexer.wazuh.svc.cluster.local,OU=Wazuh,O=Wazuh,L=Local,ST=Local,C=US
 
     plugins.security.audit.type: internal_opensearch
     plugins.security.enable_snapshot_restore_privilege: true
