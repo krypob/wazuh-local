@@ -1,0 +1,10 @@
+# configs/compose/dashboard/wazuh.yml
+# Wazuh plugin config — points the dashboard to the local manager.
+
+hosts:
+  - default:
+      url: https://wazuh-manager
+      port: 55000
+      username: wazuh-wui
+      password: SecurePassword123!
+      run_as: false

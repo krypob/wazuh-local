@@ -1,0 +1,155 @@
+# docker-compose.yml — Lightweight Wazuh stack (no Kubernetes required)
+#
+# Usage (managed automatically by setup.sh --mode compose):
+#   docker compose up -d --wait
+#   docker compose down          # stop, keep data
+#   docker compose down -v       # stop + delete all data
+#
+# Env overrides (also accepted from shell):
+#   WAZUH_INDEXER_PASSWORD   (default: SecurePassword123!)
+#   WAZUH_API_PASSWORD       (default: SecurePassword123!)
+#   WAZUH_DASHBOARD_PASSWORD (default: SecurePassword123!)
+
+x-wazuh-version: &wazuh-version "4.9.0"
+
+services:
+
+  # ── Wazuh Indexer (OpenSearch) ──────────────────────────────────────────────
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.9.0
+    container_name: wazuh-indexer
+    hostname: wazuh-indexer
+    restart: unless-stopped
+
+    environment:
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: "true"
+      INDEXER_PASSWORD: "${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}"
+
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./configs/compose/indexer/opensearch.yml:/usr/share/wazuh-indexer/opensearch.yml:ro
+      - ./configs/compose/certs/root-ca.pem:/usr/share/wazuh-indexer/certs/root-ca.pem:ro
+      - ./configs/compose/certs/indexer.pem:/usr/share/wazuh-indexer/certs/indexer.pem:ro
+      - ./configs/compose/certs/indexer-key.pem:/usr/share/wazuh-indexer/certs/indexer-key.pem:ro
+      - ./configs/compose/certs/admin.pem:/usr/share/wazuh-indexer/certs/admin.pem:ro
+      - ./configs/compose/certs/admin-key.pem:/usr/share/wazuh-indexer/certs/admin-key.pem:ro
+
+    ports:
+      - "9200:9200"
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          curl -sk -u "admin:${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}" \
+            https://localhost:9200/_cluster/health | grep -q '"status":"green"\|"status":"yellow"'
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  # ── Wazuh Manager ───────────────────────────────────────────────────────────
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.9.0
+    container_name: wazuh-manager
+    hostname: wazuh-manager
+    restart: unless-stopped
+    depends_on:
+      wazuh-indexer:
+        condition: service_healthy
+
+    environment:
+      INDEXER_URL: "https://wazuh-indexer:9200"
+      INDEXER_USERNAME: "admin"
+      INDEXER_PASSWORD: "${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}"
+      FILEBEAT_SSL_VERIFICATION_MODE: "full"
+      API_USERNAME: "wazuh-wui"
+      API_PASSWORD: "${WAZUH_API_PASSWORD:-SecurePassword123!}"
+
+    volumes:
+      - wazuh-manager-data:/var/ossec/data
+      - wazuh-manager-logs:/var/ossec/logs
+      - ./configs/compose/manager/ossec.conf:/wazuh-config-mount/etc/ossec.conf:ro
+      - ./configs/compose/certs/root-ca.pem:/etc/ssl/root-ca.pem:ro
+      - ./configs/compose/certs/manager.pem:/etc/ssl/manager.pem:ro
+      - ./configs/compose/certs/manager-key.pem:/etc/ssl/manager-key.pem:ro
+
+    ports:
+      - "1514:1514/tcp"   # Agent data
+      - "1515:1515/tcp"   # Agent enrollment
+      - "55000:55000/tcp" # REST API
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          /var/ossec/bin/wazuh-control status | grep -q "wazuh-analysisd is running"
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
+
+  # ── Wazuh Dashboard ─────────────────────────────────────────────────────────
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.9.0
+    container_name: wazuh-dashboard
+    hostname: wazuh-dashboard
+    restart: unless-stopped
+    depends_on:
+      wazuh-indexer:
+        condition: service_healthy
+      wazuh-manager:
+        condition: service_healthy
+
+    environment:
+      INDEXER_USERNAME: "admin"
+      INDEXER_PASSWORD: "${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}"
+      WAZUH_API_URL: "https://wazuh-manager"
+      DASHBOARD_USERNAME: "kibanaserver"
+      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_PASSWORD:-SecurePassword123!}"
+      SERVER_SSL_ENABLED: "true"
+      SERVER_SSL_CERTIFICATE: /usr/share/wazuh-dashboard/certs/dashboard.pem
+      SERVER_SSL_KEY: /usr/share/wazuh-dashboard/certs/dashboard-key.pem
+
+    volumes:
+      - ./configs/compose/dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+      - ./configs/compose/dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro
+      - ./configs/compose/certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro
+      - ./configs/compose/certs/dashboard.pem:/usr/share/wazuh-dashboard/certs/dashboard.pem:ro
+      - ./configs/compose/certs/dashboard-key.pem:/usr/share/wazuh-dashboard/certs/dashboard-key.pem:ro
+
+    ports:
+      - "443:5601/tcp"    # Dashboard (HTTPS)
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sk https://localhost:5601/app/wazuh -o /dev/null -w "%{http_code}" | grep -q "200\|302"
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+# ── Named volumes ────────────────────────────────────────────────────────────
+volumes:
+  wazuh-indexer-data:
+    driver: local
+  wazuh-manager-data:
+    driver: local
+  wazuh-manager-logs:
+    driver: local
+
+# ── Internal network ─────────────────────────────────────────────────────────
+networks:
+  default:
+    name: wazuh-network
+    driver: bridge

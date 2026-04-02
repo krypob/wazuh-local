@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
-# setup.sh — one-command Wazuh setup on local Kubernetes (k3d)
+# setup.sh — one-command Wazuh setup on local Kubernetes or Docker Compose
 #
 # Usage:
-#   ./setup.sh                          # interactive setup
-#   CLUSTER_NAME=my-wazuh ./setup.sh    # custom cluster name
-#   WAZUH_INDEXER_PASSWORD=MyPass ./setup.sh  # custom password
+#   ./setup.sh                     # interactive — prompts for mode
+#   ./setup.sh --mode k8s          # Kubernetes mode (k3d cluster)
+#   ./setup.sh --mode compose      # Lightweight mode (Docker Compose, no k8s)
 #
-# What it does:
-#   1. Checks all required tools are installed
-#   2. Creates a k3d cluster (k3s in Docker)
-#   3. Generates TLS certificates for all Wazuh components
-#   4. Deploys Wazuh Indexer → Manager → Dashboard in order
-#   5. Prints access credentials and URLs
-#
-# Optional env overrides:
-#   CLUSTER_NAME              Cluster name (default: wazuh-local)
-#   WAZUH_NAMESPACE           Kubernetes namespace (default: wazuh)
+# Optional env overrides (both modes):
 #   WAZUH_INDEXER_PASSWORD    Indexer/admin password (default: SecurePassword123!)
 #   WAZUH_API_PASSWORD        Manager API password (default: SecurePassword123!)
 #   WAZUH_DASHBOARD_PASSWORD  Dashboard kibanaserver password (default: SecurePassword123!)
+#
+# k8s-mode env overrides:
+#   CLUSTER_NAME              Cluster name (default: wazuh-local)
+#   WAZUH_NAMESPACE           Kubernetes namespace (default: wazuh)
 #   POD_READY_TIMEOUT         Seconds to wait for pod readiness (default: 360)
 
 set -euo pipefail
@@ -29,6 +24,7 @@ source "${SCRIPT_DIR}/scripts/requirements.sh"
 source "${SCRIPT_DIR}/scripts/cluster.sh"
 source "${SCRIPT_DIR}/scripts/certs.sh"
 source "${SCRIPT_DIR}/scripts/wazuh.sh"
+source "${SCRIPT_DIR}/scripts/compose.sh"
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
@@ -38,25 +34,79 @@ echo -e "${BOLD}${CYAN}  ██║ █╗ ██║███████║  █
 echo -e "${BOLD}${CYAN}  ██║███╗██║██╔══██║ ███╔╝  ██║   ██║██╔══██║${RESET}"
 echo -e "${BOLD}${CYAN}  ╚███╔███╔╝██║  ██║███████╗╚██████╔╝██║  ██║${RESET}"
 echo -e "${BOLD}${CYAN}   ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝${RESET}"
-echo -e "${BOLD}                  local k8s edition${RESET}"
+echo -e "${BOLD}               local edition — v4.9.0${RESET}"
 echo ""
 
-# ── Checks ────────────────────────────────────────────────────────────────────
-print_requirements_table
-check_requirements
+# ── Mode selection ────────────────────────────────────────────────────────────
+SETUP_MODE=""
 
-# ── Cluster ───────────────────────────────────────────────────────────────────
-create_cluster
+# Parse --mode flag
+for arg in "$@"; do
+  case "$arg" in
+    --mode=*) SETUP_MODE="${arg#--mode=}" ;;
+    --mode)   ;;  # next arg handled below
+  esac
+done
+# Handle --mode <value> (space-separated)
+for i in "$@"; do
+  if [[ "${prev_arg:-}" == "--mode" ]]; then SETUP_MODE="$i"; fi
+  prev_arg="$i"
+done
 
-# ── Wazuh ─────────────────────────────────────────────────────────────────────
-deploy_wazuh
+if [[ -z "$SETUP_MODE" ]]; then
+  log_section "Select Setup Mode"
+  echo ""
+  echo -e "  ${BOLD}[1] Kubernetes (k3d)${RESET}    — Full k3s cluster in Docker. Production-like."
+  echo -e "      Requires: docker, k3d, kubectl, helm, openssl"
+  echo ""
+  echo -e "  ${BOLD}[2] Lightweight (Compose)${RESET} — Docker Compose only. Faster, simpler."
+  echo -e "      Requires: docker, docker compose, openssl"
+  echo ""
+  echo -n "  Choose [1/2] (default: 2): "
+  read -r mode_input
+  mode_input="${mode_input:-2}"
 
-log_section "Setup Complete"
-echo ""
-log_ok "Wazuh is running on your local k3d cluster."
+  case "$mode_input" in
+    1) SETUP_MODE="k8s" ;;
+    2) SETUP_MODE="compose" ;;
+    *) log_error "Invalid choice. Use 1 or 2."; exit 1 ;;
+  esac
+fi
+
+# Persist the chosen mode so teardown.sh / access.sh / status.sh can auto-detect
+echo "${SETUP_MODE}" > "${SCRIPT_DIR}/.wazuh-mode"
+
+# ── Mode: Kubernetes ──────────────────────────────────────────────────────────
+if [[ "$SETUP_MODE" == "k8s" ]]; then
+  log_section "Mode: Kubernetes (k3d)"
+  print_requirements_table_k8s
+  check_requirements_k8s
+  create_cluster
+  deploy_wazuh
+
+  log_section "Setup Complete"
+  log_ok "Wazuh is running on your local k3d cluster."
+
+# ── Mode: Lightweight (Docker Compose) ───────────────────────────────────────
+elif [[ "$SETUP_MODE" == "compose" ]]; then
+  log_section "Mode: Lightweight (Docker Compose)"
+  print_requirements_table_compose
+  check_requirements_compose
+  generate_certs_compose
+  start_compose
+
+  log_section "Setup Complete"
+  log_ok "Wazuh is running via Docker Compose."
+
+else
+  log_error "Unknown mode '${SETUP_MODE}'. Use: k8s | compose"
+  exit 1
+fi
+
 echo ""
 log_info "Quick commands:"
 echo "  ./access.sh    — open the dashboard in your browser"
 echo "  ./status.sh    — check health of all Wazuh components"
-echo "  ./teardown.sh  — remove everything (cluster + data)"
+echo "  ./teardown.sh  — stop Wazuh (keeps data)"
+echo "  ./teardown.sh --all — stop Wazuh and remove all data"
 echo ""
