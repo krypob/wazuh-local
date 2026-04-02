@@ -20,30 +20,34 @@ spec:
       labels:
         app: wazuh-indexer
     spec:
-      # Required: OpenSearch needs vm.max_map_count >= 262144
       initContainers:
+        # Required: OpenSearch needs vm.max_map_count >= 262144
         - name: sysctl
           image: busybox:1.36
           command: ["sysctl", "-w", "vm.max_map_count=262144"]
           securityContext:
             privileged: true
 
-        # Fix cert directory/file permissions after Kubernetes mounts the
-        # Secret volume. Kubernetes cannot set directory permissions via
-        # defaultMode (only files), and always creates internal symlink dirs
-        # (..data, ..timestamp) at 0755. OpenSearch security plugin requires
-        # 0700 for dirs and 0600 for files — this initContainer satisfies both.
+        # Copy certs from the read-only Secret volume into a writable emptyDir,
+        # then set the permissions OpenSearch security plugin requires:
+        #   directory → 0700, files → 0600
+        # Direct chmod on the Secret mount fails because Kubernetes mounts
+        # Secrets as read-only tmpfs.
         - name: fix-cert-permissions
           image: busybox:1.36
           command:
             - sh
             - -c
             - |
-              chmod 700 /certs && \
-              find /certs -maxdepth 1 -name "*.pem" -exec chmod 600 {} \;
+              cp /certs-secret/*.pem /certs-rw/ && \
+              chmod 700 /certs-rw           && \
+              chmod 600 /certs-rw/*.pem
           volumeMounts:
-            - name: indexer-certs
-              mountPath: /certs
+            - name: indexer-certs-secret
+              mountPath: /certs-secret
+              readOnly: true
+            - name: indexer-certs-rw
+              mountPath: /certs-rw
           securityContext:
             runAsUser: 0
 
@@ -89,9 +93,10 @@ spec:
             - name: indexer-config
               mountPath: /usr/share/wazuh-indexer/jvm.options
               subPath: jvm.options
-            - name: indexer-certs
+            # Use the writable emptyDir populated by fix-cert-permissions,
+            # not the Secret directly — permissions are already correct.
+            - name: indexer-certs-rw
               mountPath: /usr/share/wazuh-indexer/certs
-              readOnly: true
 
           # ── Probes ─────────────────────────────────────────────────────────
           # Readiness: TCP socket — works before security plugin is initialized.
@@ -117,13 +122,14 @@ spec:
         - name: indexer-config
           configMap:
             name: wazuh-indexer-config
-        - name: indexer-certs
+        # Read-only Secret source — only the initContainer reads from here
+        - name: indexer-certs-secret
           secret:
             secretName: wazuh-indexer-certs
-            # 0600 matches what OpenSearch security plugin expects (0600 files,
-            # 0700 dirs). Without this Kubernetes defaults to 0644 and logs
-            # dozens of "insecure file permissions" warnings on every startup.
-            defaultMode: 0600
+        # Writable emptyDir — initContainer copies + chmods certs here;
+        # main container reads from here with correct permissions
+        - name: indexer-certs-rw
+          emptyDir: {}
 
       # fsGroup: file ownership for mounted volumes
       # seccompProfile Unconfined: required for Colima/Lima kernels that do
