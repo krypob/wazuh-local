@@ -1,6 +1,5 @@
 # Generated TLS certificates (created at runtime by setup.sh)
 /tmp/wazuh-certs/
-configs/compose/certs/*.pem
 
 # Mode state file (written by setup.sh, read by teardown/access/status)
 .wazuh-mode

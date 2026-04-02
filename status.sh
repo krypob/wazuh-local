@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# status.sh — health check for Wazuh (auto-detects mode)
+# status.sh — health check for Wazuh
 #
 # Usage:
 #   ./status.sh           # auto-detects mode, basic health check
-#   ./status.sh --full    # deeper check: indexer health + agent list
+#   ./status.sh --full    # deeper: indexer cluster health + agent list
 #   ./status.sh --mode k8s
-#   ./status.sh --mode compose
+#   ./status.sh --mode colima
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,75 +15,59 @@ source "${SCRIPT_DIR}/scripts/common.sh"
 WAZUH_NAMESPACE="${WAZUH_NAMESPACE:-wazuh}"
 FULL=false
 STATUS_MODE=""
-
+prev_arg=""
 for arg in "$@"; do
+  if [[ "$prev_arg" == "--mode" ]]; then STATUS_MODE="$arg"; fi
   case "$arg" in
-    --full)     FULL=true ;;
-    --mode=*)   STATUS_MODE="${arg#--mode=}" ;;
+    --full)   FULL=true ;;
+    --mode=*) STATUS_MODE="${arg#--mode=}" ;;
   esac
-done
-for i in "$@"; do
-  if [[ "${prev_arg:-}" == "--mode" ]]; then STATUS_MODE="$i"; fi
-  prev_arg="$i"
+  prev_arg="$arg"
 done
 
-# Auto-detect from .wazuh-mode
 if [[ -z "$STATUS_MODE" && -f "${SCRIPT_DIR}/.wazuh-mode" ]]; then
   STATUS_MODE="$(cat "${SCRIPT_DIR}/.wazuh-mode")"
 fi
-STATUS_MODE="${STATUS_MODE:-compose}"
+STATUS_MODE="${STATUS_MODE:-k8s}"
+
+require_cluster
 
 log_section "Wazuh Status (${STATUS_MODE} mode)"
 
-# ── Get passwords ─────────────────────────────────────────────────────────────
-if [[ "$STATUS_MODE" == "k8s" ]]; then
-  require_cluster
-  INDEXER_PASS=$(kubectl get secret wazuh-passwords \
-    --namespace="${WAZUH_NAMESPACE}" \
-    --output=jsonpath='{.data.indexer-password}' 2>/dev/null \
-    | base64 -d 2>/dev/null || echo "SecurePassword123!")
-  API_PASS=$(kubectl get secret wazuh-passwords \
-    --namespace="${WAZUH_NAMESPACE}" \
-    --output=jsonpath='{.data.api-password}' 2>/dev/null \
-    | base64 -d 2>/dev/null || echo "SecurePassword123!")
-else
-  INDEXER_PASS="${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}"
-  API_PASS="${WAZUH_API_PASSWORD:-SecurePassword123!}"
-fi
+# ── Retrieve passwords ────────────────────────────────────────────────────────
+INDEXER_PASS=$(kubectl get secret wazuh-passwords \
+  --namespace="${WAZUH_NAMESPACE}" \
+  --output=jsonpath='{.data.indexer-password}' 2>/dev/null \
+  | base64 -d 2>/dev/null || echo "SecurePassword123!")
+API_PASS=$(kubectl get secret wazuh-passwords \
+  --namespace="${WAZUH_NAMESPACE}" \
+  --output=jsonpath='{.data.api-password}' 2>/dev/null \
+  | base64 -d 2>/dev/null || echo "SecurePassword123!")
 
-# ── k8s status ────────────────────────────────────────────────────────────────
-if [[ "$STATUS_MODE" == "k8s" ]]; then
-  echo ""
-  log_info "Pods:"
-  kubectl get pods --namespace="${WAZUH_NAMESPACE}" --output=wide 2>/dev/null \
-    || log_warn "No pods found — is Wazuh deployed?"
-
-  echo ""
-  log_info "PVCs:"
-  kubectl get pvc --namespace="${WAZUH_NAMESPACE}" 2>/dev/null || true
-
-  echo ""
-  log_info "Services:"
-  kubectl get svc --namespace="${WAZUH_NAMESPACE}" 2>/dev/null || true
-
-# ── compose status ────────────────────────────────────────────────────────────
-else
-  echo ""
-  log_info "Containers:"
-  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" ps 2>/dev/null \
-    || log_warn "No containers found — run ./setup.sh first."
-
-  echo ""
-  log_info "Resource usage:"
-  docker stats --no-stream \
-    wazuh-indexer wazuh-manager wazuh-dashboard 2>/dev/null \
-    || true
-fi
+# ── Pods ──────────────────────────────────────────────────────────────────────
+echo ""
+log_info "Pods:"
+kubectl get pods --namespace="${WAZUH_NAMESPACE}" --output=wide 2>/dev/null \
+  || log_warn "No pods found — is Wazuh deployed?"
 
 echo ""
+log_info "PVCs:"
+kubectl get pvc --namespace="${WAZUH_NAMESPACE}" 2>/dev/null || true
 
-# ── Manager API health (both modes) ──────────────────────────────────────────
-log_info "Wazuh Manager API:"
+echo ""
+log_info "Services:"
+kubectl get svc --namespace="${WAZUH_NAMESPACE}" 2>/dev/null || true
+
+# ── Colima VM status ──────────────────────────────────────────────────────────
+if [[ "$STATUS_MODE" == "colima" ]]; then
+  echo ""
+  log_info "Colima VM:"
+  colima status --profile "${COLIMA_PROFILE:-wazuh}" 2>/dev/null || log_warn "Colima VM not running."
+fi
+
+# ── Manager API ping ──────────────────────────────────────────────────────────
+echo ""
+log_info "Manager API:"
 if curl -sk -u "wazuh-wui:${API_PASS}" \
     "https://localhost:55000/" \
     --max-time 5 \
@@ -93,10 +77,9 @@ else
   log_warn "Manager API did not respond (may still be starting up)."
 fi
 
+# ── Full check ────────────────────────────────────────────────────────────────
 if [[ "$FULL" == true ]]; then
   echo ""
-
-  # Indexer cluster health
   log_info "Indexer cluster health:"
   curl -sk -u "admin:${INDEXER_PASS}" \
     "https://localhost:9200/_cluster/health?pretty" \
@@ -106,8 +89,6 @@ if [[ "$FULL" == true ]]; then
     || log_warn "Indexer not reachable on localhost:9200"
 
   echo ""
-
-  # Agent list
   log_info "Registered agents:"
   curl -sk -u "wazuh-wui:${API_PASS}" \
     "https://localhost:55000/agents?pretty" \
@@ -118,8 +99,4 @@ if [[ "$FULL" == true ]]; then
 fi
 
 echo ""
-if [[ "$STATUS_MODE" == "k8s" ]]; then
-  log_info "Logs: kubectl logs -n ${WAZUH_NAMESPACE} <pod-name>"
-else
-  log_info "Logs: docker compose logs -f [wazuh-indexer|wazuh-manager|wazuh-dashboard]"
-fi
+log_info "Logs: kubectl logs -n ${WAZUH_NAMESPACE} <pod-name>"
