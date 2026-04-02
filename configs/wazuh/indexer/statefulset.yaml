@@ -50,9 +50,10 @@ spec:
               memory: "1Gi"
 
           # ── Environment ────────────────────────────────────────────────────
+          # OPENSEARCH_JAVA_OPTS is intentionally omitted — heap and direct
+          # memory are configured in jvm.options via ConfigMap to avoid
+          # duplicate JVM flags (OpenSearch merges both sources).
           env:
-            - name: OPENSEARCH_JAVA_OPTS
-              value: "-Xms512m -Xmx512m"
             - name: INDEXER_PASSWORD
               valueFrom:
                 secretKeyRef:

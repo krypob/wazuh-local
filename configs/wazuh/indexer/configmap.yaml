@@ -50,10 +50,13 @@ data:
     # Disable unused plugins for local dev
     node.max_local_storage_nodes: 1
 
-  # JVM options — reduced heap for lightweight local dev
+  # JVM options — tuned for lightweight local dev
+  # MaxDirectMemorySize must be set explicitly: OpenSearch auto-caps it at
+  # heap/2 (256m with 512m heap), but the security plugin needs ~278m to load.
   jvm.options: |
     -Xms512m
     -Xmx512m
+    -XX:MaxDirectMemorySize=512m
     -XX:+UseG1GC
     -XX:G1ReservePercent=25
     -XX:InitiatingHeapOccupancyPercent=30
