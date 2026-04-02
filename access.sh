@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# access.sh — open the Wazuh Dashboard + print credentials
+# access.sh — open the Wazuh Dashboard and print credentials
 #
 # Usage:
-#   ./access.sh           # auto-detects mode (k8s or compose)
+#   ./access.sh           # auto-detects mode
 #   ./access.sh --api     # also print Manager API credentials
 #   ./access.sh --mode k8s
-#   ./access.sh --mode compose
+#   ./access.sh --mode colima
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,41 +15,34 @@ source "${SCRIPT_DIR}/scripts/common.sh"
 WAZUH_NAMESPACE="${WAZUH_NAMESPACE:-wazuh}"
 SHOW_API=false
 ACCESS_MODE=""
-
+prev_arg=""
 for arg in "$@"; do
+  if [[ "$prev_arg" == "--mode" ]]; then ACCESS_MODE="$arg"; fi
   case "$arg" in
-    --api)      SHOW_API=true ;;
-    --mode=*)   ACCESS_MODE="${arg#--mode=}" ;;
+    --api)    SHOW_API=true ;;
+    --mode=*) ACCESS_MODE="${arg#--mode=}" ;;
   esac
-done
-for i in "$@"; do
-  if [[ "${prev_arg:-}" == "--mode" ]]; then ACCESS_MODE="$i"; fi
-  prev_arg="$i"
+  prev_arg="$arg"
 done
 
-# Auto-detect from .wazuh-mode
 if [[ -z "$ACCESS_MODE" && -f "${SCRIPT_DIR}/.wazuh-mode" ]]; then
   ACCESS_MODE="$(cat "${SCRIPT_DIR}/.wazuh-mode")"
 fi
-ACCESS_MODE="${ACCESS_MODE:-compose}"
+ACCESS_MODE="${ACCESS_MODE:-k8s}"
+
+require_cluster
 
 log_section "Wazuh Dashboard Access"
 
-# ── Retrieve passwords ────────────────────────────────────────────────────────
-if [[ "$ACCESS_MODE" == "k8s" ]]; then
-  require_cluster
-  INDEXER_PASS=$(kubectl get secret wazuh-passwords \
-    --namespace="${WAZUH_NAMESPACE}" \
-    --output=jsonpath='{.data.indexer-password}' 2>/dev/null \
-    | base64 -d 2>/dev/null || echo "SecurePassword123!")
-  API_PASS=$(kubectl get secret wazuh-passwords \
-    --namespace="${WAZUH_NAMESPACE}" \
-    --output=jsonpath='{.data.api-password}' 2>/dev/null \
-    | base64 -d 2>/dev/null || echo "SecurePassword123!")
-else
-  INDEXER_PASS="${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}"
-  API_PASS="${WAZUH_API_PASSWORD:-SecurePassword123!}"
-fi
+# ── Retrieve passwords from cluster ──────────────────────────────────────────
+INDEXER_PASS=$(kubectl get secret wazuh-passwords \
+  --namespace="${WAZUH_NAMESPACE}" \
+  --output=jsonpath='{.data.indexer-password}' 2>/dev/null \
+  | base64 -d 2>/dev/null || echo "SecurePassword123!")
+API_PASS=$(kubectl get secret wazuh-passwords \
+  --namespace="${WAZUH_NAMESPACE}" \
+  --output=jsonpath='{.data.api-password}' 2>/dev/null \
+  | base64 -d 2>/dev/null || echo "SecurePassword123!")
 
 # ── Print access info ─────────────────────────────────────────────────────────
 echo ""
@@ -81,15 +74,10 @@ else
   log_info "Open your browser: https://localhost:443"
 fi
 
-# ── Quick pod/container status ────────────────────────────────────────────────
+# ── Quick pod status ──────────────────────────────────────────────────────────
 echo ""
-if [[ "$ACCESS_MODE" == "k8s" ]]; then
-  log_info "Pod status:"
-  kubectl get pods --namespace="${WAZUH_NAMESPACE}" \
-    --output=custom-columns="NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[-1].status" \
-    2>/dev/null || true
-else
-  log_info "Container status:"
-  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" ps 2>/dev/null || true
-fi
+log_info "Pod status:"
+kubectl get pods --namespace="${WAZUH_NAMESPACE}" \
+  --output=custom-columns="NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[-1].status" \
+  2>/dev/null || true
 echo ""
