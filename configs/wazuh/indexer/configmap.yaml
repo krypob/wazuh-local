@@ -18,6 +18,11 @@ data:
     # Single-node discovery — no cluster formation needed locally
     discovery.type: single-node
 
+    # Disable OpenSearch's own JNA seccomp filter — Colima/Lima kernels do
+    # not compile CONFIG_SECCOMP so the attempt always fails with an
+    # UnsupportedOperationException. This is safe for local dev.
+    bootstrap.system_call_filter: false
+
     # Paths
     path.data: /var/lib/wazuh-indexer
     path.logs: /var/log/wazuh-indexer

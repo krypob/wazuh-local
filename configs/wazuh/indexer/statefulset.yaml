@@ -101,6 +101,10 @@ spec:
         - name: indexer-certs
           secret:
             secretName: wazuh-indexer-certs
+            # 0600 matches what OpenSearch security plugin expects (0600 files,
+            # 0700 dirs). Without this Kubernetes defaults to 0644 and logs
+            # dozens of "insecure file permissions" warnings on every startup.
+            defaultMode: 0600
 
       # fsGroup: file ownership for mounted volumes
       # seccompProfile Unconfined: required for Colima/Lima kernels that do
