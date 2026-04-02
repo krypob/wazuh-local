@@ -8,10 +8,15 @@ WAZUH_NAMESPACE="${WAZUH_NAMESPACE:-wazuh}"
 MANIFESTS_DIR="${MANIFESTS_DIR:-$(dirname "${BASH_SOURCE[0]}")/../configs/wazuh}"
 POD_READY_TIMEOUT="${POD_READY_TIMEOUT:-480}"
 
-# ── Internal passwords (change for real environments) ─────────────────────────
-WAZUH_INDEXER_PASSWORD="${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}"
+# ── Passwords ─────────────────────────────────────────────────────────────────
+# INDEXER and DASHBOARD passwords must match the bcrypt hashes baked into the
+# Wazuh Indexer image's internal_users.yml (uploaded by securityadmin on first
+# run). Changing these without also re-hashing the security index will break
+# auth.  For local dev the shipped defaults are intentional.
+# API password is for the Wazuh Manager REST API — independent of OpenSearch.
+WAZUH_INDEXER_PASSWORD="${WAZUH_INDEXER_PASSWORD:-admin}"
+WAZUH_DASHBOARD_PASSWORD="${WAZUH_DASHBOARD_PASSWORD:-kibanaserver}"
 WAZUH_API_PASSWORD="${WAZUH_API_PASSWORD:-SecurePassword123!}"
-WAZUH_DASHBOARD_PASSWORD="${WAZUH_DASHBOARD_PASSWORD:-SecurePassword123!}"
 
 deploy_wazuh() {
   log_section "Deploying Wazuh"
@@ -162,12 +167,11 @@ remove_wazuh() {
 }
 
 print_access_info() {
-  local indexer_pass="${WAZUH_INDEXER_PASSWORD}"
   log_section "Wazuh is Ready"
   echo ""
   echo -e "  ${BOLD}Dashboard:${RESET}  https://localhost:443"
   echo -e "  ${BOLD}Username:${RESET}   admin"
-  echo -e "  ${BOLD}Password:${RESET}   ${indexer_pass}"
+  echo -e "  ${BOLD}Password:${RESET}   ${WAZUH_INDEXER_PASSWORD}"
   echo ""
   echo -e "  ${BOLD}Manager API:${RESET} https://localhost:55000"
   echo -e "  ${BOLD}API User:${RESET}   wazuh-wui"
