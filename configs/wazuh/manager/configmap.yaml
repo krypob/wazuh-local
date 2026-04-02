@@ -70,7 +70,7 @@ data:
       <indexer>
         <enabled>yes</enabled>
         <hosts>
-          <host>https://wazuh-indexer-svc:9200</host>
+          <host>https://wazuh-indexer.wazuh.svc.cluster.local:9200</host>
         </hosts>
         <ssl>
           <certificate_authorities>

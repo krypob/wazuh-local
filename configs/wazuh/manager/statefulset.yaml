@@ -41,15 +41,15 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "128Mi"
+              memory: "256Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"
+              memory: "1Gi"
 
           # ── Environment ────────────────────────────────────────────────────
           env:
             - name: INDEXER_URL
-              value: "https://wazuh-indexer-svc:9200"
+              value: "https://wazuh-indexer.wazuh.svc.cluster.local:9200"
             - name: INDEXER_USERNAME
               value: "admin"
             - name: INDEXER_PASSWORD
