@@ -6,7 +6,7 @@
 # ── Defaults (override via env) ───────────────────────────────────────────────
 WAZUH_NAMESPACE="${WAZUH_NAMESPACE:-wazuh}"
 MANIFESTS_DIR="${MANIFESTS_DIR:-$(dirname "${BASH_SOURCE[0]}")/../configs/wazuh}"
-POD_READY_TIMEOUT="${POD_READY_TIMEOUT:-360}"
+POD_READY_TIMEOUT="${POD_READY_TIMEOUT:-480}"
 
 # ── Internal passwords (change for real environments) ─────────────────────────
 WAZUH_INDEXER_PASSWORD="${WAZUH_INDEXER_PASSWORD:-SecurePassword123!}"
@@ -46,6 +46,10 @@ deploy_wazuh() {
   log_ok "Wazuh Indexer is running."
 
   # ── Initialize Indexer Security ───────────────────────────────────────────
+  # Wait for OpenSearch HTTP to actually accept connections before running
+  # securityadmin — the pod being Ready (TCP) doesn't mean the REST API is up.
+  log_info "Waiting for OpenSearch REST API to accept connections..."
+  _wait_for_indexer_http
   log_info "Initializing OpenSearch security (securityadmin)..."
   _run_security_admin
 
@@ -68,6 +72,35 @@ deploy_wazuh() {
   log_ok "Wazuh Dashboard is running."
 
   print_access_info
+}
+
+# Poll until OpenSearch responds on port 9200 (even with a 401/403 — just
+# means the HTTP listener is up). Needed because TCP-ready != HTTP-ready.
+_wait_for_indexer_http() {
+  local indexer_pod
+  indexer_pod=$(kubectl get pod \
+    --namespace="${WAZUH_NAMESPACE}" \
+    --selector=app=wazuh-indexer \
+    --output=jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+  local max_wait=180
+  local elapsed=0
+  while [[ $elapsed -lt $max_wait ]]; do
+    local code
+    code=$(kubectl exec "${indexer_pod}" \
+      --namespace="${WAZUH_NAMESPACE}" \
+      -- curl -sk -o /dev/null -w "%{http_code}" https://127.0.0.1:9200 2>/dev/null || echo "000")
+    # 200/401/403 all mean the HTTP server is up
+    if [[ "$code" == "200" || "$code" == "401" || "$code" == "403" ]]; then
+      log_ok "OpenSearch HTTP is up (HTTP ${code})."
+      return 0
+    fi
+    sleep 5
+    elapsed=$(( elapsed + 5 ))
+    log_info "  Still waiting for OpenSearch HTTP... (${elapsed}s / ${max_wait}s, last code: ${code})"
+  done
+
+  log_warn "OpenSearch HTTP did not respond within ${max_wait}s — proceeding anyway."
 }
 
 # Run the OpenSearch securityadmin script to initialize the security plugin.

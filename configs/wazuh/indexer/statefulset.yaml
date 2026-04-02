@@ -74,26 +74,19 @@ spec:
               readOnly: true
 
           # ── Probes ─────────────────────────────────────────────────────────
+          # Readiness: TCP socket — works before security plugin is initialized.
+          # Auth-based HTTP probe fails on first boot because securityadmin
+          # hasn't run yet, causing a false timeout.
           readinessProbe:
-            httpGet:
-              path: /_cluster/health
+            tcpSocket:
               port: 9200
-              scheme: HTTPS
-              httpHeaders:
-                - name: Authorization
-                  value: "Basic YWRtaW46U2VjdXJlUGFzc3dvcmQxMjMh"  # admin:SecurePassword123!
             initialDelaySeconds: 60
-            periodSeconds: 15
-            failureThreshold: 10
+            periodSeconds: 10
+            failureThreshold: 30   # 60 + 30*10 = 360s total window
           livenessProbe:
-            httpGet:
-              path: /_cluster/health
+            tcpSocket:
               port: 9200
-              scheme: HTTPS
-              httpHeaders:
-                - name: Authorization
-                  value: "Basic YWRtaW46U2VjdXJlUGFzc3dvcmQxMjMh"
-            initialDelaySeconds: 90
+            initialDelaySeconds: 120
             periodSeconds: 30
             failureThreshold: 5
 
@@ -108,5 +101,11 @@ spec:
           secret:
             secretName: wazuh-indexer-certs
 
+      # fsGroup: file ownership for mounted volumes
+      # seccompProfile Unconfined: required for Colima/Lima kernels that do
+      # not compile CONFIG_SECCOMP — without this OpenSearch logs a fatal
+      # UnsupportedOperationException and may fail to start.
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: Unconfined
