@@ -39,8 +39,9 @@ spec:
             - sh
             - -c
             - |
-              cp /certs-secret/*.pem /certs-rw/ && \
-              chmod 700 /certs-rw           && \
+              cp /certs-secret/*.pem /certs-rw/   && \
+              chown -R 1000:1000 /certs-rw        && \
+              chmod 700 /certs-rw                 && \
               chmod 600 /certs-rw/*.pem
           volumeMounts:
             - name: indexer-certs-secret
